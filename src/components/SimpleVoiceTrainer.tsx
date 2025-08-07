@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import VoiceConversationAgent from './VoiceConversationAgent';
+import HybridVoiceAgent from './HybridVoiceAgent';
 
 // Sales training scenarios
 const TRAINING_SCENARIOS = [
@@ -122,7 +122,8 @@ export default function SimpleVoiceTrainer() {
         <div style={{ maxWidth: '600px', margin: '50px auto', padding: '30px', backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 4px 8px rgba(0,0,0,0.1)' }}>
           <h2 style={{ textAlign: 'center', marginBottom: '20px' }}>Voice Sales Trainer Setup</h2>
           <p style={{ textAlign: 'center', color: '#666', marginBottom: '30px' }}>
-            Enter your API keys to enable real-time voice conversations with AI sales prospects
+            Enter your API keys to enable intelligent voice conversations with AI prospects.<br/>
+            <small style={{ color: '#999' }}>Uses browser speech recognition + Claude AI + ElevenLabs voice synthesis</small>
           </p>
           
           <div style={{ marginBottom: '20px' }}>
@@ -184,7 +185,7 @@ export default function SimpleVoiceTrainer() {
   // Show conversation interface
   if (currentView === 'conversation' && selectedScenario) {
     return (
-      <VoiceConversationAgent
+      <HybridVoiceAgent
         scenario={selectedScenario}
         claudeApiKey={claudeApiKey}
         elevenLabsApiKey={elevenLabsApiKey}
