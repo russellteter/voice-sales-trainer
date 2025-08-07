@@ -11,6 +11,10 @@ const nextConfig: NextConfig = {
     // your project has type errors.
     ignoreBuildErrors: true,
   },
+  // Force Railway cache invalidation
+  experimental: {
+    appDir: true,
+  },
 };
 
 export default nextConfig;
