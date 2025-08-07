@@ -1,159 +1,90 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import VoiceConversationAgent from './VoiceConversationAgent';
 
-// Mock scenarios for standalone app
-const MOCK_SCENARIOS = [
+// Sales training scenarios
+const TRAINING_SCENARIOS = [
   {
     id: '1',
     title: 'Cold Call - Software Sales',
-    description: 'Practice making a cold call to a potential software client',
+    description: 'Practice making a cold call to a potential software client. The AI will play a busy executive who is initially skeptical but can be won over.',
     category: 'Cold Calling',
     difficulty: 'Beginner'
   },
   {
     id: '2', 
     title: 'Handling Price Objections',
-    description: 'Learn to address cost concerns effectively',
+    description: 'Learn to address cost concerns effectively. The AI will play an interested prospect with budget concerns.',
     category: 'Objection Handling',
     difficulty: 'Intermediate'
   },
   {
     id: '3',
     title: 'Closing Enterprise Deals',
-    description: 'Navigate complex enterprise sales processes',
+    description: 'Navigate complex enterprise sales processes. The AI will play a decision-maker ready to buy but needs guidance.',
     category: 'Closing',
+    difficulty: 'Advanced'
+  },
+  {
+    id: '4',
+    title: 'Product Demo Follow-up',
+    description: 'Follow up after a product demonstration. The AI will play a prospect considering multiple solutions.',
+    category: 'Follow-up',
+    difficulty: 'Intermediate'
+  },
+  {
+    id: '5',
+    title: 'Negotiation - Contract Terms',
+    description: 'Practice negotiating contract terms and pricing. The AI will push back on terms and seek concessions.',
+    category: 'Negotiation',
     difficulty: 'Advanced'
   }
 ];
 
-interface TrainingSession {
-  id: string;
-  scenario: string;
-  status: 'idle' | 'recording' | 'processing' | 'complete';
+interface ConversationResults {
   duration: number;
-  score?: number;
-  feedback?: string[];
+  score: number;
+  feedback: string[];
+  transcript: ConversationTurn[];
+}
+
+interface ConversationTurn {
+  speaker: 'user' | 'agent';
+  text: string;
+  timestamp: number;
 }
 
 export default function SimpleVoiceTrainer() {
   const [selectedScenario, setSelectedScenario] = useState<any>(null);
-  const [currentSession, setCurrentSession] = useState<TrainingSession | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
-  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
+  const [currentView, setCurrentView] = useState<'scenarios' | 'conversation' | 'results'>('scenarios');
+  const [conversationResults, setConversationResults] = useState<ConversationResults | null>(null);
   
   // API Configuration
   const [claudeApiKey, setClaudeApiKey] = useState('');
   const [elevenLabsApiKey, setElevenLabsApiKey] = useState('');
   const [showApiConfig, setShowApiConfig] = useState(true);
-  
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Start recording timer
-  useEffect(() => {
-    if (isRecording) {
-      timerRef.current = setInterval(() => {
-        setRecordingTime(prev => prev + 1);
-      }, 1000);
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    }
+  // Handle conversation completion
+  const handleConversationEnd = (results: ConversationResults) => {
+    setConversationResults(results);
+    setCurrentView('results');
+  };
 
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
-  }, [isRecording]);
-
-  const startTrainingSession = (scenario: any) => {
+  // Handle scenario selection
+  const handleScenarioSelect = (scenario: any) => {
     setSelectedScenario(scenario);
-    setCurrentSession({
-      id: Date.now().toString(),
-      scenario: scenario.title,
-      status: 'idle',
-      duration: 0
-    });
+    setCurrentView('conversation');
   };
 
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          setAudioChunks(prev => [...prev, event.data]);
-        }
-      };
-      
-      recorder.onstop = () => {
-        stream.getTracks().forEach(track => track.stop());
-      };
-      
-      setMediaRecorder(recorder);
-      setAudioChunks([]);
-      recorder.start();
-      setIsRecording(true);
-      setRecordingTime(0);
-      
-      if (currentSession) {
-        setCurrentSession(prev => prev ? {...prev, status: 'recording'} : null);
-      }
-    } catch (error) {
-      console.error('Error starting recording:', error);
-      alert('Could not access microphone. Please check permissions.');
-    }
-  };
-
-  const stopRecording = async () => {
-    if (mediaRecorder && mediaRecorder.state === 'recording') {
-      mediaRecorder.stop();
-      setIsRecording(false);
-      
-      if (currentSession) {
-        setCurrentSession(prev => prev ? {
-          ...prev, 
-          status: 'processing',
-          duration: recordingTime
-        } : null);
-        
-        // Simulate processing with mock feedback
-        setTimeout(() => {
-          setCurrentSession(prev => prev ? {
-            ...prev,
-            status: 'complete',
-            score: Math.floor(Math.random() * 40) + 60,
-            feedback: [
-              'Strong opening with clear value proposition',
-              'Consider asking more discovery questions early',
-              'Great handling of objections',
-              'Could improve closing technique with more urgency'
-            ]
-          } : null);
-        }, 2000);
-      }
-    }
-  };
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const resetSession = () => {
-    setCurrentSession(null);
+  // Handle back navigation
+  const handleBackToScenarios = () => {
     setSelectedScenario(null);
-    setIsRecording(false);
-    setRecordingTime(0);
-    setAudioChunks([]);
+    setCurrentView('scenarios');
+    setConversationResults(null);
   };
 
+  // Handle API configuration
   const handleApiConfigSave = () => {
     if (claudeApiKey && elevenLabsApiKey) {
       setShowApiConfig(false);
@@ -177,12 +108,22 @@ export default function SimpleVoiceTrainer() {
     }
   }, []);
 
+  // Format time display
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   // Show API configuration
   if (showApiConfig) {
     return (
       <div className="container">
         <div style={{ maxWidth: '600px', margin: '50px auto', padding: '30px', backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 4px 8px rgba(0,0,0,0.1)' }}>
-          <h2 style={{ textAlign: 'center', marginBottom: '30px' }}>Voice Sales Trainer Setup</h2>
+          <h2 style={{ textAlign: 'center', marginBottom: '20px' }}>Voice Sales Trainer Setup</h2>
+          <p style={{ textAlign: 'center', color: '#666', marginBottom: '30px' }}>
+            Enter your API keys to enable real-time voice conversations with AI sales prospects
+          </p>
           
           <div style={{ marginBottom: '20px' }}>
             <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>
@@ -201,6 +142,9 @@ export default function SimpleVoiceTrainer() {
                 fontSize: '16px'
               }}
             />
+            <small style={{ color: '#666', fontSize: '14px' }}>
+              Powers the conversation logic and AI responses
+            </small>
           </div>
           
           <div style={{ marginBottom: '30px' }}>
@@ -220,6 +164,9 @@ export default function SimpleVoiceTrainer() {
                 fontSize: '16px'
               }}
             />
+            <small style={{ color: '#666', fontSize: '14px' }}>
+              Enables real-time voice conversation with AI agents
+            </small>
           </div>
           
           <button
@@ -227,240 +174,286 @@ export default function SimpleVoiceTrainer() {
             className="btn btn-primary"
             style={{ width: '100%', padding: '12px' }}
           >
-            Start Training
+            Start Voice Training
           </button>
         </div>
       </div>
     );
   }
 
+  // Show conversation interface
+  if (currentView === 'conversation' && selectedScenario) {
+    return (
+      <VoiceConversationAgent
+        scenario={selectedScenario}
+        claudeApiKey={claudeApiKey}
+        elevenLabsApiKey={elevenLabsApiKey}
+        onConversationEnd={handleConversationEnd}
+        onBack={handleBackToScenarios}
+      />
+    );
+  }
+
+  // Show results
+  if (currentView === 'results' && conversationResults) {
+    return (
+      <div className="container">
+        <div style={{ maxWidth: '900px', margin: '0 auto', backgroundColor: 'white', padding: '30px', borderRadius: '8px', boxShadow: '0 4px 8px rgba(0,0,0,0.1)' }}>
+          
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '30px' }}>
+            <button onClick={handleBackToScenarios} className="btn btn-secondary" style={{ padding: '8px 16px' }}>
+              ← New Training
+            </button>
+            <h2 style={{ margin: '0', textAlign: 'center', flex: '1' }}>Training Results</h2>
+            <div style={{ width: '120px' }}></div>
+          </div>
+
+          {/* Results Summary */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '30px' }}>
+            <div style={{ textAlign: 'center', padding: '20px', backgroundColor: '#f0fdf4', borderRadius: '8px' }}>
+              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#16a34a', marginBottom: '8px' }}>
+                {conversationResults.score}
+              </div>
+              <div style={{ fontSize: '14px', color: '#166534' }}>Overall Score</div>
+            </div>
+            <div style={{ textAlign: 'center', padding: '20px', backgroundColor: '#eff6ff', borderRadius: '8px' }}>
+              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#2563eb', marginBottom: '8px' }}>
+                {formatTime(conversationResults.duration)}
+              </div>
+              <div style={{ fontSize: '14px', color: '#1d4ed8' }}>Duration</div>
+            </div>
+            <div style={{ textAlign: 'center', padding: '20px', backgroundColor: '#fef3c7', borderRadius: '8px' }}>
+              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#d97706', marginBottom: '8px' }}>
+                {conversationResults.transcript.length}
+              </div>
+              <div style={{ fontSize: '14px', color: '#92400e' }}>Exchanges</div>
+            </div>
+          </div>
+
+          {/* Detailed Feedback */}
+          <div style={{ marginBottom: '30px' }}>
+            <h3 style={{ marginBottom: '20px', fontWeight: '600' }}>📈 Performance Feedback</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {conversationResults.feedback.map((item, index) => (
+                <div key={index} className="feedback-item" style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                  <div style={{ 
+                    width: '6px', 
+                    height: '6px', 
+                    backgroundColor: '#3b82f6', 
+                    borderRadius: '50%', 
+                    marginTop: '8px',
+                    flexShrink: '0'
+                  }}></div>
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Conversation Transcript */}
+          <div>
+            <h3 style={{ marginBottom: '20px', fontWeight: '600' }}>💬 Conversation Transcript</h3>
+            <div style={{ 
+              maxHeight: '400px', 
+              overflowY: 'auto', 
+              backgroundColor: '#f9fafb', 
+              padding: '20px', 
+              borderRadius: '8px',
+              border: '1px solid #e5e7eb'
+            }}>
+              {conversationResults.transcript.map((turn, index) => (
+                <div key={index} style={{ 
+                  marginBottom: '16px', 
+                  padding: '12px 16px', 
+                  borderRadius: '8px',
+                  backgroundColor: turn.speaker === 'user' ? '#dbeafe' : '#fef3c7'
+                }}>
+                  <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '6px', fontWeight: '600' }}>
+                    {turn.speaker === 'user' ? '👤 You' : '🤖 AI Prospect'} • {new Date(turn.timestamp).toLocaleTimeString()}
+                  </div>
+                  <div style={{ lineHeight: '1.5' }}>{turn.text}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show scenario selection (default view)
   return (
     <div className="container">
       <header style={{ textAlign: 'center', marginBottom: '40px' }}>
         <h1 style={{ fontSize: '2.5rem', fontWeight: 'bold', marginBottom: '10px' }}>
           Voice Sales Trainer
         </h1>
-        <p style={{ color: '#666', fontSize: '1.1rem' }}>
-          Practice your sales conversations with AI-powered feedback
+        <p style={{ color: '#666', fontSize: '1.1rem', marginBottom: '20px' }}>
+          Have real-time voice conversations with AI prospects to master your sales skills
         </p>
         <button
           onClick={() => setShowApiConfig(true)}
           style={{ 
-            marginTop: '10px', 
-            padding: '6px 12px', 
+            padding: '8px 16px', 
             backgroundColor: '#6b7280', 
             color: 'white', 
             border: 'none', 
-            borderRadius: '4px',
+            borderRadius: '6px',
             cursor: 'pointer',
             fontSize: '14px'
           }}
         >
-          Configure API Keys
+          ⚙️ Configure API Keys
         </button>
       </header>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '30px', maxWidth: '1200px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+        <h2 style={{ textAlign: 'center', marginBottom: '30px', fontSize: '1.5rem', fontWeight: '600' }}>
+          🎯 Choose Your Training Scenario
+        </h2>
         
-        {/* Scenario Selection */}
-        <div style={{ backgroundColor: 'white', padding: '24px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '20px' }}>
-            🎯 Training Scenarios
-          </h2>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {MOCK_SCENARIOS.map((scenario) => (
-              <div
-                key={scenario.id}
-                className={`scenario-card ${selectedScenario?.id === scenario.id ? 'selected' : ''}`}
-                onClick={() => startTrainingSession(scenario)}
-                style={{ padding: '16px' }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                  <h3 style={{ fontWeight: '500', margin: '0' }}>{scenario.title}</h3>
-                  <span style={{ 
-                    padding: '4px 8px', 
-                    fontSize: '12px', 
-                    borderRadius: '12px',
-                    backgroundColor: scenario.difficulty === 'Beginner' ? '#dcfce7' : scenario.difficulty === 'Intermediate' ? '#fef3c7' : '#fecaca',
-                    color: scenario.difficulty === 'Beginner' ? '#166534' : scenario.difficulty === 'Intermediate' ? '#92400e' : '#991b1b'
-                  }}>
-                    {scenario.difficulty}
-                  </span>
-                </div>
-                <p style={{ fontSize: '14px', color: '#666', marginBottom: '8px' }}>{scenario.description}</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
+          {TRAINING_SCENARIOS.map((scenario) => (
+            <div
+              key={scenario.id}
+              className="scenario-card"
+              onClick={() => handleScenarioSelect(scenario)}
+              style={{ 
+                padding: '24px',
+                cursor: 'pointer',
+                backgroundColor: 'white',
+                borderRadius: '8px',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                border: '2px solid #e5e7eb',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = '#3b82f6';
+                e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.15)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = '#e5e7eb';
+                e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+              }}
+            >
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                <h3 style={{ fontWeight: '600', margin: '0', fontSize: '1.1rem', lineHeight: '1.3' }}>
+                  {scenario.title}
+                </h3>
+                <span style={{ 
+                  padding: '4px 10px', 
+                  fontSize: '11px', 
+                  borderRadius: '12px',
+                  backgroundColor: scenario.difficulty === 'Beginner' ? '#dcfce7' : scenario.difficulty === 'Intermediate' ? '#fef3c7' : '#fecaca',
+                  color: scenario.difficulty === 'Beginner' ? '#166534' : scenario.difficulty === 'Intermediate' ? '#92400e' : '#991b1b',
+                  fontWeight: '600',
+                  whiteSpace: 'nowrap'
+                }}>
+                  {scenario.difficulty}
+                </span>
+              </div>
+
+              {/* Description */}
+              <p style={{ 
+                fontSize: '14px', 
+                color: '#666', 
+                marginBottom: '16px', 
+                lineHeight: '1.4',
+                minHeight: '60px'
+              }}>
+                {scenario.description}
+              </p>
+
+              {/* Footer */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ 
                   display: 'inline-block',
-                  padding: '4px 8px', 
+                  padding: '6px 12px', 
                   fontSize: '12px', 
                   backgroundColor: '#f3f4f6', 
                   color: '#374151', 
-                  borderRadius: '4px'
+                  borderRadius: '16px',
+                  fontWeight: '500'
                 }}>
                   {scenario.category}
                 </span>
+                <div style={{ 
+                  fontSize: '24px',
+                  color: '#3b82f6'
+                }}>
+                  🎙️
+                </div>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
 
-        {/* Recording Interface */}
-        <div style={{ backgroundColor: 'white', padding: '24px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '20px' }}>
-            🎙️ Voice Training Session
-          </h2>
-
-          {!selectedScenario ? (
-            <div style={{ textAlign: 'center', padding: '60px 0' }}>
-              <div style={{ fontSize: '4rem', marginBottom: '16px' }}>👤</div>
-              <p style={{ color: '#666' }}>Select a training scenario to get started</p>
-            </div>
-          ) : (
-            <div>
-              {/* Current Scenario Info */}
-              <div style={{ backgroundColor: '#f9fafb', padding: '16px', borderRadius: '8px', marginBottom: '24px' }}>
-                <h3 style={{ fontWeight: '500', marginBottom: '8px' }}>{selectedScenario.title}</h3>
-                <p style={{ color: '#666', fontSize: '14px', margin: '0' }}>{selectedScenario.description}</p>
+        {/* Instructions */}
+        <div style={{ marginTop: '50px', backgroundColor: 'white', padding: '30px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+          <h3 style={{ textAlign: 'center', marginBottom: '30px', fontSize: '1.25rem', fontWeight: '600' }}>
+            🚀 How Voice Training Works
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '30px' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ 
+                width: '60px', 
+                height: '60px', 
+                backgroundColor: '#eff6ff', 
+                borderRadius: '50%', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                margin: '0 auto 16px',
+                fontSize: '24px'
+              }}>
+                🎯
               </div>
-
-              {/* Recording Controls */}
-              <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                {currentSession?.status === 'idle' && (
-                  <button
-                    onClick={startRecording}
-                    className="btn btn-danger"
-                    style={{ padding: '12px 24px', fontSize: '16px' }}
-                  >
-                    🎤 Start Recording
-                  </button>
-                )}
-
-                {isRecording && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div style={{ 
-                          width: '12px', 
-                          height: '12px', 
-                          backgroundColor: '#ef4444', 
-                          borderRadius: '50%',
-                          animation: 'pulse 1s infinite'
-                        }}></div>
-                        <span style={{ color: '#ef4444', fontWeight: '500' }}>Recording</span>
-                      </div>
-                      <span style={{ fontSize: '1.5rem', fontFamily: 'monospace' }}>
-                        {formatTime(recordingTime)}
-                      </span>
-                    </div>
-                    <button
-                      onClick={stopRecording}
-                      className="btn btn-secondary"
-                      style={{ padding: '12px 24px', fontSize: '16px' }}
-                    >
-                      ⏹️ Stop Recording
-                    </button>
-                  </div>
-                )}
-
-                {currentSession?.status === 'processing' && (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                    <div style={{ color: '#3b82f6' }}>🔄</div>
-                    <span style={{ color: '#3b82f6' }}>Processing your recording...</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Session Results */}
-              {currentSession?.status === 'complete' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                  {/* Score */}
-                  <div className="feedback-positive" style={{ padding: '16px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <h4 style={{ margin: '0', fontWeight: '500' }}>Session Score</h4>
-                      <span style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
-                        {currentSession.score}/100
-                      </span>
-                    </div>
-                    <div style={{ 
-                      width: '100%', 
-                      height: '8px', 
-                      backgroundColor: '#bbf7d0', 
-                      borderRadius: '4px',
-                      overflow: 'hidden'
-                    }}>
-                      <div 
-                        style={{ 
-                          height: '100%', 
-                          backgroundColor: '#16a34a', 
-                          width: `${currentSession.score}%`,
-                          transition: 'width 0.5s ease-in-out'
-                        }}
-                      ></div>
-                    </div>
-                  </div>
-
-                  {/* Feedback */}
-                  <div>
-                    <h4 style={{ fontWeight: '500', marginBottom: '12px' }}>
-                      📈 Detailed Feedback
-                    </h4>
-                    <ul style={{ listStyle: 'none', padding: '0', margin: '0' }}>
-                      {currentSession.feedback?.map((item, index) => (
-                        <li key={index} style={{ 
-                          display: 'flex', 
-                          alignItems: 'flex-start', 
-                          gap: '8px', 
-                          marginBottom: '8px' 
-                        }}>
-                          <span style={{ 
-                            width: '8px', 
-                            height: '8px', 
-                            backgroundColor: '#3b82f6', 
-                            borderRadius: '50%', 
-                            marginTop: '8px',
-                            flexShrink: '0'
-                          }}></span>
-                          <span style={{ color: '#374151' }}>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  {/* Session Stats */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                    <div style={{ backgroundColor: '#f9fafb', padding: '16px', borderRadius: '8px', textAlign: 'center' }}>
-                      <p style={{ fontSize: '14px', color: '#666', margin: '0 0 4px 0' }}>Duration</p>
-                      <p style={{ fontSize: '1.125rem', fontWeight: '600', margin: '0' }}>
-                        {formatTime(currentSession.duration)}
-                      </p>
-                    </div>
-                    <div style={{ backgroundColor: '#f9fafb', padding: '16px', borderRadius: '8px', textAlign: 'center' }}>
-                      <p style={{ fontSize: '14px', color: '#666', margin: '0 0 4px 0' }}>Scenario</p>
-                      <p style={{ fontSize: '1.125rem', fontWeight: '600', margin: '0' }}>{selectedScenario.difficulty}</p>
-                    </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div style={{ display: 'flex', gap: '12px' }}>
-                    <button
-                      onClick={startRecording}
-                      className="btn btn-primary"
-                      style={{ flex: '1', padding: '8px 16px' }}
-                    >
-                      Try Again
-                    </button>
-                    <button
-                      onClick={resetSession}
-                      className="btn btn-secondary"
-                      style={{ flex: '1', padding: '8px 16px' }}
-                    >
-                      New Scenario
-                    </button>
-                  </div>
-                </div>
-              )}
+              <h4 style={{ fontWeight: '600', marginBottom: '8px' }}>Choose Scenario</h4>
+              <p style={{ fontSize: '14px', color: '#666', lineHeight: '1.4' }}>
+                Select from realistic sales scenarios designed to challenge different skills
+              </p>
             </div>
-          )}
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ 
+                width: '60px', 
+                height: '60px', 
+                backgroundColor: '#f0fdf4', 
+                borderRadius: '50%', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                margin: '0 auto 16px',
+                fontSize: '24px'
+              }}>
+                🗣️
+              </div>
+              <h4 style={{ fontWeight: '600', marginBottom: '8px' }}>Live Conversation</h4>
+              <p style={{ fontSize: '14px', color: '#666', lineHeight: '1.4' }}>
+                Have a real-time voice conversation with an AI playing your prospect
+              </p>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ 
+                width: '60px', 
+                height: '60px', 
+                backgroundColor: '#fef3c7', 
+                borderRadius: '50%', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                margin: '0 auto 16px',
+                fontSize: '24px'
+              }}>
+                📈
+              </div>
+              <h4 style={{ fontWeight: '600', marginBottom: '8px' }}>Get Feedback</h4>
+              <p style={{ fontSize: '14px', color: '#666', lineHeight: '1.4' }}>
+                Receive detailed performance analysis and improvement suggestions
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
