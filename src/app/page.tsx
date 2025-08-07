@@ -1,5 +1,5 @@
-import VoiceTrainingInterface from '@/components/VoiceTrainingInterface';
+import SimpleVoiceTrainer from '@/components/SimpleVoiceTrainer';
 
 export default function Home() {
-  return <VoiceTrainingInterface />;
+  return <SimpleVoiceTrainer />;
 }
