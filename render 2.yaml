@@ -1,0 +1,74 @@
+services:
+  # Frontend Service
+  - type: web
+    name: voice-sales-trainer-frontend
+    env: node
+    region: oregon
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: voice-sales-trainer-backend
+          property: host
+      - key: NEXT_PUBLIC_ENVIRONMENT
+        value: production
+
+  # Backend Service  
+  - type: web
+    name: voice-sales-trainer-backend
+    env: python
+    region: oregon
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: cd backend && alembic upgrade head && gunicorn main:app --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 2
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+      - key: LOG_LEVEL
+        value: INFO
+      - key: DATABASE_URL
+        fromDatabase:
+          name: voice-sales-trainer-db
+          property: connectionString
+      - key: REDIS_URL
+        fromDatabase:
+          name: voice-sales-trainer-redis
+          property: connectionString
+      - key: ELEVENLABS_API_KEY
+        sync: false  # Set manually in dashboard
+      - key: CLAUDE_API_KEY
+        sync: false  # Set manually in dashboard
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: FRONTEND_URL
+        fromService:
+          type: web
+          name: voice-sales-trainer-frontend
+          property: host
+      - key: CORS_ALLOWED_ORIGINS
+        fromService:
+          type: web
+          name: voice-sales-trainer-frontend
+          property: host
+
+databases:
+  # PostgreSQL Database
+  - name: voice-sales-trainer-db
+    databaseName: voice_sales_trainer
+    user: voice_trainer
+    region: oregon
+    plan: starter
+
+  # Redis Cache
+  - name: voice-sales-trainer-redis
+    region: oregon
+    plan: starter

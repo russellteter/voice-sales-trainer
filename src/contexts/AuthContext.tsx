@@ -1,8 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { authApi, handleApiError, isAuthError } from '../lib/api';
-import { User, LoginRequest, RegisterRequest } from '../types/api';
+import { authApi, handleApiError, isAuthError, User, LoginRequest, RegisterRequest } from '../lib/api';
 
 interface AuthContextType {
   user: User | null;
@@ -234,8 +233,8 @@ export function useUserPermissions() {
       if (!user) return false;
       if (user.role === 'admin' || user.role === 'trainer') return true;
       
-      // Experience level restrictions
-      if (user.experience_level === 'Beginner' && difficulty === 'Advanced') {
+      // Experience level restrictions (using sales_persona as proxy)
+      if (user.sales_persona === 'Beginner' && difficulty === 'Advanced') {
         return false;
       }
       

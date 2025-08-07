@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { sessionApi, handleApiError } from '../lib/api';
-import { SessionAnalytics } from '../types/api';
+import { sessionApi, handleApiError, SessionAnalytics } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
 interface SalesMetric {
@@ -298,6 +297,7 @@ export default function SalesTrainingDashboard({ userId = 'default-user' }: Sale
             </div>
           ))}
         </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
@@ -411,7 +411,6 @@ export default function SalesTrainingDashboard({ userId = 'default-user' }: Sale
             </button>
           </div>
         </div>
-        )}
       </div>
     </div>
   );

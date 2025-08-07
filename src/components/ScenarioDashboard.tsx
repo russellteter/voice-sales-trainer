@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { scenarioApi, handleApiError } from '../lib/api';
-import { TrainingScenario, ScenarioFilters } from '../types/api';
+import { scenarioApi, handleApiError, TrainingScenario } from '../lib/api';
+import { ScenarioFilters } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 
 // This will be replaced by API data
@@ -85,9 +85,9 @@ export default function ScenarioDashboard({ onScenarioSelect, selectedScenario }
           const difficultyOrder = { 'Beginner': 1, 'Intermediate': 2, 'Advanced': 3 };
           return difficultyOrder[a.difficulty] - difficultyOrder[b.difficulty];
         case 'popularity':
-          return b.completion_count - a.completion_count;
+          return b.completionCount - a.completionCount;
         case 'score':
-          return b.average_score - a.average_score;
+          return b.averageScore - a.averageScore;
         default:
           return 0;
       }
@@ -310,10 +310,10 @@ export default function ScenarioDashboard({ onScenarioSelect, selectedScenario }
                     <div className="flex justify-between items-center pt-3 border-t border-gray-200">
                       <div className="flex items-center space-x-4">
                         <span className="text-sm text-gray-600">
-                          {scenario.completion_count} completions
+                          {scenario.completionCount} completions
                         </span>
-                        <span className={`text-sm font-medium ${getScoreColor(scenario.average_score)}`}>
-                          {scenario.average_score}% avg
+                        <span className={`text-sm font-medium ${getScoreColor(scenario.averageScore)}`}>
+                          {scenario.averageScore}% avg
                         </span>
                       </div>
                     </div>
@@ -336,9 +336,9 @@ export default function ScenarioDashboard({ onScenarioSelect, selectedScenario }
                   </div>
                   <div className="flex items-center space-x-6 text-sm text-gray-500">
                     <span>{scenario.duration}</span>
-                    <span>{scenario.completion_count} completions</span>
-                    <span className={getScoreColor(scenario.average_score)}>
-                      {scenario.average_score}% avg
+                    <span>{scenario.completionCount} completions</span>
+                    <span className={getScoreColor(scenario.averageScore)}>
+                      {scenario.averageScore}% avg
                     </span>
                   </div>
                 </>

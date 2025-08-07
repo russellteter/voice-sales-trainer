@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { scenarioApi, sessionApi, voiceApi, handleApiError } from '../lib/api';
-import { TrainingScenario, TrainingSession, CreateSessionRequest } from '../types/api';
+import { scenarioApi, sessionApi, voiceApi, handleApiError, TrainingScenario, TrainingSession, CreateSessionRequest } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { config } from '../lib/config';
 
@@ -169,8 +168,7 @@ export default function VoiceTrainingInterface() {
                 status: 'complete',
                 score: voiceResponse.data?.score_update || Math.floor(Math.random() * 40) + 60,
                 feedback: [
-                  voiceResponse.data?.feedback || 'Session completed successfully',
-                  voiceResponse.data?.coaching_tip || 'Keep practicing to improve your skills'
+                  voiceResponse.data?.feedback || 'Session completed successfully'
                 ]
               } : null);
               

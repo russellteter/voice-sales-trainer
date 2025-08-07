@@ -424,7 +424,7 @@ export const useLearningAnalytics = (options: UseLearningAnalyticsOptions) => {
         try {
           // Get latest session metrics without updating loading state
           const response = await apiClient(`/learning/sessions/active?user_id=${userId}`);
-          const currentSession = response.active_sessions[state.currentSessionId];
+          const currentSession = state.currentSessionId ? response.active_sessions[state.currentSessionId] : null;
           
           if (currentSession) {
             setState(prev => ({

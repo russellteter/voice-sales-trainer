@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { TrainingScenario } from './ScenarioDashboard';
+import { TrainingScenario } from '../lib/api';
 import useVoiceSession, { VoiceSessionCallbacks, VoiceSessionState } from '../hooks/useVoiceSession';
 import useLearningAnalytics, { LearningSessionConfig, ConversationAnalysis, RealTimeCoachingFeedback } from '../hooks/useLearningAnalytics';
 import { ConversationMessage } from '../lib/voiceClient';
@@ -41,10 +41,10 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
       console.log('Received message:', message);
       
       // Analyze conversation turns with Claude learning intelligence
-      if (message.type === 'user' && voiceSession.conversationHistory.length > 0) {
+      if (message.type === 'user' && messages.length > 0) {
         try {
           // Get the previous AI response to analyze the conversation turn
-          const aiMessages = voiceSession.conversationHistory.filter(m => m.type === 'assistant');
+          const aiMessages = messages.filter(m => m.type === 'ai');
           const lastAiResponse = aiMessages[aiMessages.length - 1];
           
           if (lastAiResponse) {
@@ -87,7 +87,7 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
       console.log('Step completed:', step);
     },
     onFeedback: (feedback: string) => {
-      setRealTimeFeedback(prev => [...prev, feedback]);
+      console.log('Received feedback:', feedback);
     },
   };
   
@@ -120,9 +120,9 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
   const startLearningSession = useCallback(async () => {
     try {
       const sessionConfig: LearningSessionConfig = {
-        scenario_type: scenario.type,
-        prospect_persona: scenario.prospectPersona || 'enterprise_vp',
-        difficulty_level: scenario.difficulty,
+        scenario_type: scenario.category,
+        prospect_persona: scenario.persona || 'enterprise_vp',
+        difficulty_level: mapDifficultyToNumber(scenario.difficulty),
         learning_objectives: scenario.objectives,
         company_context: {
           scenario_title: scenario.title,
@@ -155,7 +155,7 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
       onComplete({
         score: learningAnalytics.currentPerformanceScore || 0,
         feedback: learningAnalytics.realtimeCoachingFeedback.map(f => f.message),
-        duration: voiceSession.duration || 0,
+        duration: sessionState.sessionDuration || 0,
       });
       
       return finalReport;
@@ -163,7 +163,7 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
       console.error('Failed to end learning session:', error);
       throw error;
     }
-  }, [learningAnalytics, voiceSession.duration, onComplete]);
+  }, [learningAnalytics, sessionState.sessionDuration, onComplete]);
 
   // Six-step simulation framework steps
   const simulationSteps: ConversationStep[] = [
@@ -328,7 +328,7 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
     // Calculate score based on conversation metrics
     const baseScore = 70;
     const messageBonus = Math.min(messages.length * 2, 20); // Up to 20 points for engagement
-    const feedbackBonus = realTimeFeedback.length; // 1 point per feedback
+    const feedbackBonus = learningAnalytics.realtimeCoachingFeedback.length; // 1 point per feedback
     const latencyPenalty = sessionState.latency > 3000 ? -5 : 0; // Penalty for high latency
     
     return Math.min(100, Math.max(0, baseScore + messageBonus + feedbackBonus + latencyPenalty));
