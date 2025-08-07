@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server';
 
 export async function GET(request: NextRequest) {
-  const apiKey = process.env.ELEVENLABS_API_KEY;
-  const voiceId = process.env.ELEVENLABS_VOICE_ID;
+  const apiKey = process.env.ELEVENLABS_API_KEY || process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY;
+  const voiceId = process.env.ELEVENLABS_VOICE_ID || process.env.NEXT_PUBLIC_ELEVENLABS_VOICE_ID;
   
   if (!apiKey || !voiceId) {
     return new Response('API configuration missing', { status: 500 });
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   // This endpoint will handle WebSocket authentication
-  const apiKey = process.env.ELEVENLABS_API_KEY;
+  const apiKey = process.env.ELEVENLABS_API_KEY || process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY;
   
   if (!apiKey) {
     return Response.json({ error: 'API key not configured' }, { status: 500 });

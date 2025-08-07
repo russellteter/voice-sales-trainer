@@ -43,6 +43,24 @@ module.exports = {
         'gradient-class': 'linear-gradient(135deg, #4739E7 0%, #9188F1 100%)',
         'gradient-class-blue': 'linear-gradient(135deg, #4739E7 0%, #0A1849 100%)',
       },
+      animation: {
+        'fadeIn': 'fadeIn 0.5s ease-in-out',
+        'slideUp': 'slideUp 0.3s ease-out',
+        'pulse': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+      },
+      keyframes: {
+        fadeIn: {
+          '0%': { opacity: '0', transform: 'translateY(10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        slideUp: {
+          '0%': { opacity: '0', transform: 'translateY(20px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+      },
+      screens: {
+        'xs': '475px',
+      },
     },
   },
   plugins: [],

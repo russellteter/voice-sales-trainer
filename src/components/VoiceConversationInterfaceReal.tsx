@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { TrainingScenario } from './ScenarioDashboard';
 import SecureVoiceInterface from './SecureVoiceInterface';
+import RealTimeFeedbackPanel, { useFeedbackManager, FeedbackGenerators } from './RealTimeFeedbackPanel';
+import EnhancedCoachingPanel, { CoachingMessage, CoachingMessageFactory, CoachPersona } from './EnhancedCoachingPanel';
 
 interface ConversationMessage {
   id: string;
@@ -141,6 +143,21 @@ export default function VoiceConversationInterfaceReal({ scenario, onComplete, o
       generateRealTimeFeedback(transcript);
     }
   }, [transcript]);
+
+  // Simulate audio level changes during recording
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isRecording) {
+      interval = setInterval(() => {
+        setAudioLevel(Math.floor(Math.random() * 12));
+      }, 100);
+    } else {
+      setAudioLevel(0);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isRecording]);
 
   const startConversation = async () => {
     try {

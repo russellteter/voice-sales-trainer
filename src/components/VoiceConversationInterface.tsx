@@ -2,6 +2,10 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { TrainingScenario } from './ScenarioDashboard';
+import VoiceStatusIndicator, { useVoiceStatus, type VoiceStatusData } from './VoiceStatusIndicator';
+import VoiceErrorHandler, { VoiceErrors, type VoiceError } from './VoiceErrorHandler';
+import RealTimeFeedbackPanel, { useFeedbackManager, FeedbackGenerators } from './RealTimeFeedbackPanel';
+import VoiceControlPanel, { MobileVoiceButton, type VoiceControlState } from './VoiceControlPanel';
 
 interface ConversationMessage {
   id: string;
@@ -35,8 +39,23 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
   const [sessionTimer, setSessionTimer] = useState(0);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
-  const [realTimeFeedback, setRealTimeFeedback] = useState<string[]>([]);
   const [voiceActivityLevel, setVoiceActivityLevel] = useState(0);
+  const [currentError, setCurrentError] = useState<VoiceError | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+
+  // Enhanced status management
+  const voiceStatus = useVoiceStatus();
+  const feedbackManager = useFeedbackManager();
+  
+  // Voice control state mapping
+  const getVoiceControlState = (): VoiceControlState => {
+    if (currentError) return 'error';
+    if (conversationState === 'paused') return 'paused';
+    if (isAIResponding) return 'speaking';
+    if (isRecording) return 'listening';
+    if (conversationState === 'active') return 'inactive';
+    return 'inactive';
+  };
   
   const sessionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -140,6 +159,10 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
 
   const startConversation = async () => {
     try {
+      setCurrentError(null);
+      voiceStatus.updateWebSocketStatus('connecting');
+      voiceStatus.updateMicrophoneStatus('requesting');
+      
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           echoCancellation: true,
@@ -160,7 +183,18 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
       
       setMediaRecorder(recorder);
       setConversationState('active');
+      setIsConnected(true);
+      
+      // Update status indicators
+      voiceStatus.updateWebSocketStatus('connected', 'demo-session-' + Date.now());
+      voiceStatus.updateMicrophoneStatus('active');
+      voiceStatus.updateAIStatus('idle');
+      voiceStatus.updateAudioQuality('excellent', 45);
+      
       startVoiceActivityDetection(stream);
+      
+      // Add initial feedback
+      feedbackManager.addFeedback('coaching', 'technique', 'Session started! Remember to speak clearly and at a natural pace.', { priority: 3 });
       
       // Start with AI context gathering
       addSystemMessage("Welcome! I'm your AI conversation partner. Let's start with some context gathering to personalize this training session.");
@@ -168,7 +202,11 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
       
     } catch (error) {
       console.error('Error starting conversation:', error);
-      alert('Could not access microphone. Please check permissions.');
+      const voiceError = error instanceof DOMException && error.name === 'NotAllowedError' 
+        ? VoiceErrors.microphonePermission(error.message)
+        : VoiceErrors.microphoneHardware(error.message);
+      setCurrentError(voiceError);
+      voiceStatus.updateMicrophoneStatus('denied');
     }
   };
 
@@ -177,6 +215,8 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
       setAudioChunks([]);
       mediaRecorder.start(1000); // Collect data every second
       setIsRecording(true);
+      voiceStatus.updateAIStatus('listening');
+      feedbackManager.addFeedback('coaching', 'technique', 'Good! I\'m listening. Speak clearly and confidently.', { priority: 3 });
     }
   };
 
@@ -184,6 +224,7 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
     if (mediaRecorder && mediaRecorder.state === 'recording') {
       mediaRecorder.stop();
       setIsRecording(false);
+      voiceStatus.updateAIStatus('thinking');
       
       // Simulate processing user speech
       setTimeout(() => {
@@ -219,18 +260,22 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
 
   const generateAIResponse = (userInput: string) => {
     setIsAIResponding(true);
+    voiceStatus.updateAIStatus('thinking');
     
     // Simulate AI processing time
     setTimeout(() => {
       const aiResponse = generateContextualResponse(userInput);
       simulateAIResponse(aiResponse);
-      setIsAIResponding(false);
+      voiceStatus.updateAIStatus('speaking');
       
-      // Add real-time feedback
-      const feedback = generateRealTimeFeedback(userInput);
-      if (feedback) {
-        setRealTimeFeedback(prev => [...prev, feedback]);
-      }
+      // Add real-time feedback based on user input analysis
+      generateSmartFeedback(userInput);
+      
+      // Return to idle after AI finishes speaking
+      setTimeout(() => {
+        setIsAIResponding(false);
+        voiceStatus.updateAIStatus('idle');
+      }, 3000);
     }, 1500);
   };
 
@@ -246,16 +291,42 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
     return stepResponses[Math.min(currentStep, stepResponses.length - 1)];
   };
 
-  const generateRealTimeFeedback = (userInput: string): string | null => {
-    const feedbackOptions = [
-      "Great use of open-ended questions!",
-      "Consider asking about the impact of the current situation",
-      "Nice job acknowledging the concern before responding",
-      "Try to quantify the business impact",
-      "Strong confidence in your delivery"
-    ];
+  const generateSmartFeedback = (userInput: string) => {
+    // Enhanced feedback generation based on conversation analysis
+    const inputLower = userInput.toLowerCase();
     
-    return Math.random() > 0.7 ? feedbackOptions[Math.floor(Math.random() * feedbackOptions.length)] : null;
+    // Positive feedback triggers
+    if (inputLower.includes('question') || inputLower.includes('how') || inputLower.includes('what') || inputLower.includes('why')) {
+      feedbackManager.addFeedback('positive', 'technique', 'Excellent use of open-ended questions!', { 
+        priority: 2, 
+        context: 'User asked an open-ended question',
+        suggestion: 'Continue building on this discovery approach'
+      });
+    }
+    
+    // Improvement suggestions
+    if (inputLower.length < 20) {
+      feedbackManager.addFeedback('improvement', 'content', 'Try elaborating more on your points', {
+        priority: 2,
+        context: 'Response seemed brief',
+        suggestion: 'Add specific examples or ask follow-up questions'
+      });
+    }
+    
+    // Tone analysis (simulated)
+    if (Math.random() > 0.8) {
+      const toneOptions = [
+        { type: 'positive' as const, message: 'Great confident tone!', context: 'Tone analysis positive' },
+        { type: 'improvement' as const, message: 'Consider slowing down slightly', context: 'Pace seemed fast' },
+        { type: 'coaching' as const, message: 'Remember to pause for responses', context: 'Conversation flow' }
+      ];
+      
+      const feedback = toneOptions[Math.floor(Math.random() * toneOptions.length)];
+      feedbackManager.addFeedback(feedback.type, 'tone', feedback.message, {
+        priority: 2,
+        context: feedback.context
+      });
+    }
   };
 
   const updateConversationProgress = () => {
@@ -314,12 +385,22 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
     setConversationState('complete');
     stopVoiceActivityDetection();
     
+    // Update final status
+    voiceStatus.resetStatus();
+    setIsConnected(false);
+    
+    // Add completion achievement
+    feedbackManager.addFeedback('achievement', 'technique', 'Session completed successfully!', {
+      priority: 1,
+      context: 'Training session finished'
+    });
+    
     const sessionData = {
       scenario: scenario,
       duration: sessionTimer,
       messages: messages,
       steps: steps,
-      feedback: realTimeFeedback,
+      feedback: feedbackManager.feedbackItems,
       score: Math.floor(Math.random() * 30) + 70 // Random score 70-100
     };
     
@@ -337,35 +418,47 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
     if (isRecording) {
       stopRecording();
     }
+    voiceStatus.updateAIStatus('idle');
   };
 
   const resumeConversation = () => {
     setConversationState('active');
+    voiceStatus.updateAIStatus('idle');
+  };
+
+  // Error handling functions
+  const handleRetryConnection = () => {
+    setCurrentError(null);
+    startConversation();
+  };
+
+  const handleDismissError = () => {
+    setCurrentError(null);
   };
 
   return (
     <div className="card overflow-hidden">
       {/* Header */}
       <div className="card-header">
-        <div className="flex justify-between items-start">
-          <div>
-            <h2 className="text-2xl font-bold mb-2">{scenario.title}</h2>
-            <p className="text-white opacity-90">{scenario.description}</p>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex-1 min-w-0">
+            <h2 className="text-xl sm:text-2xl font-bold mb-2 leading-tight">{scenario.title}</h2>
+            <p className="text-white opacity-90 text-sm sm:text-base">{scenario.description}</p>
           </div>
-          <div className="text-right">
-            <div className="text-3xl font-mono font-bold">{formatTime(sessionTimer)}</div>
-            <div className="text-white opacity-75 text-sm">Session Time</div>
+          <div className="text-center sm:text-right flex-shrink-0">
+            <div className="text-2xl sm:text-3xl font-mono font-bold">{formatTime(sessionTimer)}</div>
+            <div className="text-white opacity-75 text-xs sm:text-sm">Session Time</div>
           </div>
         </div>
       </div>
 
       {/* Progress Steps */}
       <div className="bg-class-pale-purple p-4">
-        <div className="flex items-center space-x-2 overflow-x-auto">
+        <div className="flex items-center space-x-2 overflow-x-auto pb-2 scrollbar-hide">
           {steps.map((step, index) => (
             <div
               key={step.step}
-              className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm whitespace-nowrap font-medium
+              className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-xs sm:text-sm whitespace-nowrap font-medium min-w-max
                 ${step.completed 
                   ? 'bg-green-100 text-green-800' 
                   : index === currentStep 
@@ -373,7 +466,7 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
                     : 'bg-white text-middle-gray'
                 }`}
             >
-              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
+              <span className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center text-xs font-bold
                 ${step.completed 
                   ? 'bg-green-500 text-white' 
                   : index === currentStep 
@@ -381,48 +474,62 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
                     : 'bg-middle-gray text-white'}`}>
                 {step.completed ? '✓' : step.step}
               </span>
-              <span>{step.title}</span>
+              <span className="hidden sm:inline">{step.title}</span>
+              <span className="sm:hidden">{step.title.split(' ')[0]}</span>
             </div>
           ))}
         </div>
+        {/* Mobile scroll indicator */}
+        <div className="flex justify-center mt-2 sm:hidden">
+          <div className="flex space-x-1">
+            {steps.map((_, index) => (
+              <div
+                key={index}
+                className={`w-2 h-2 rounded-full ${
+                  index === currentStep ? 'bg-class-purple' : 'bg-white opacity-50'
+                }`}
+              />
+            ))}
+          </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-6">
+      <div className="flex flex-col lg:grid lg:grid-cols-3 gap-4 lg:gap-6 p-4 lg:p-6">
         
         {/* Conversation Interface */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-4 lg:space-y-6 order-2 lg:order-1">
           
           {/* Conversation Messages */}
-          <div className="bg-lightest-purple rounded-lg p-4 h-96 overflow-y-auto">
+          <div className="bg-lightest-purple rounded-lg p-3 sm:p-4 h-80 sm:h-96 overflow-y-auto">
             {messages.length === 0 ? (
               <div className="h-full flex items-center justify-center text-middle-gray">
                 {conversationState === 'setup' ? (
-                  <div className="text-center">
-                    <div className="text-6xl mb-4">🎯</div>
-                    <p className="font-medium">Ready to start your training session?</p>
-                    <p className="text-sm mt-2">Click "Start Session" to begin</p>
+                  <div className="text-center px-4">
+                    <div className="text-4xl sm:text-6xl mb-4">🎯</div>
+                    <p className="font-medium text-sm sm:text-base">Ready to start your training session?</p>
+                    <p className="text-xs sm:text-sm mt-2">Click "Start Session" to begin</p>
                   </div>
                 ) : (
                   <div className="text-center">
-                    <div className="animate-pulse">Preparing conversation...</div>
+                    <div className="animate-pulse text-sm sm:text-base">Preparing conversation...</div>
                   </div>
                 )}
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3 sm:space-y-4">
                 {messages.map((message) => (
                   <div
                     key={message.id}
                     className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
-                    <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg font-medium ${
+                    <div className={`max-w-[85%] sm:max-w-xs lg:max-w-md px-3 sm:px-4 py-2 rounded-lg font-medium ${
                       message.type === 'user' 
                         ? 'bg-class-purple text-white' 
                         : message.type === 'ai'
                         ? 'bg-white border-2 border-class-light-purple text-midnight-blue'
                         : 'bg-light-gray text-dark-gray'
                     }`}>
-                      <div className="text-sm">{message.content}</div>
+                      <div className="text-xs sm:text-sm leading-relaxed">{message.content}</div>
                       {message.confidence && (
                         <div className="text-xs mt-1 opacity-75">
                           Confidence: {Math.round(message.confidence * 100)}%
@@ -433,12 +540,12 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
                 ))}
                 {isAIResponding && (
                   <div className="flex justify-start">
-                    <div className="bg-white border-2 border-class-light-purple px-4 py-2 rounded-lg">
+                    <div className="bg-white border-2 border-class-light-purple px-3 sm:px-4 py-2 rounded-lg">
                       <div className="flex items-center space-x-2">
                         <div className="animate-bounce text-class-purple">●</div>
                         <div className="animate-bounce text-class-purple" style={{ animationDelay: '0.1s' }}>●</div>
                         <div className="animate-bounce text-class-purple" style={{ animationDelay: '0.2s' }}>●</div>
-                        <span className="text-sm text-middle-gray ml-2">AI is responding...</span>
+                        <span className="text-xs sm:text-sm text-middle-gray ml-2">AI is responding...</span>
                       </div>
                     </div>
                   </div>
@@ -448,64 +555,66 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
           </div>
 
           {/* Voice Controls */}
-          <div className="text-center space-y-4">
+          <div className="text-center space-y-3 sm:space-y-4">
             {conversationState === 'setup' && (
               <button
                 onClick={startConversation}
-                className="btn-primary text-lg px-8 py-3"
+                className="btn-primary text-base sm:text-lg px-6 sm:px-8 py-3 sm:py-4 w-full sm:w-auto min-h-[48px] touch-manipulation"
               >
                 🎤 Start Session
               </button>
             )}
 
             {conversationState === 'active' && (
-              <div className="space-y-4">
+              <div className="space-y-3 sm:space-y-4">
                 {!isRecording && !isAIResponding && (
                   <button
                     onClick={startRecording}
-                    className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-bold transition-colors"
+                    className="bg-red-600 hover:bg-red-700 active:bg-red-800 text-white px-6 py-4 rounded-lg font-bold transition-colors w-full sm:w-auto min-h-[56px] text-base sm:text-lg touch-manipulation"
                   >
                     🎤 Start Speaking
                   </button>
                 )}
 
                 {isRecording && (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-center space-x-4">
-                      <div className="w-4 h-4 bg-red-500 rounded-full animate-pulse"></div>
-                      <span className="text-red-600 font-bold">Recording...</span>
-                    </div>
-                    
-                    {/* Voice Activity Indicator */}
-                    <div className="flex items-center justify-center space-x-2">
-                      <div className="text-sm text-dark-gray font-medium">Voice Level:</div>
-                      <div className="w-32 h-2 bg-light-gray rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-gradient-to-r from-green-400 to-red-500 transition-all duration-100"
-                          style={{ width: `${voiceActivityLevel * 100}%` }}
-                        ></div>
+                  <div className="space-y-3 sm:space-y-4">
+                    <div className="flex flex-col sm:flex-row items-center justify-center space-y-2 sm:space-y-0 sm:space-x-4 bg-red-50 border border-red-200 rounded-lg p-3">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-3 h-3 sm:w-4 sm:h-4 bg-red-500 rounded-full animate-pulse"></div>
+                        <span className="text-red-600 font-bold text-sm sm:text-base">Recording...</span>
+                      </div>
+                      
+                      {/* Voice Activity Indicator */}
+                      <div className="flex items-center space-x-2 w-full sm:w-auto">
+                        <div className="text-xs sm:text-sm text-dark-gray font-medium">Voice:</div>
+                        <div className="w-24 sm:w-32 h-2 bg-light-gray rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-gradient-to-r from-green-400 to-red-500 transition-all duration-100"
+                            style={{ width: `${voiceActivityLevel * 100}%` }}
+                          ></div>
+                        </div>
                       </div>
                     </div>
                     
                     <button
                       onClick={stopRecording}
-                      className="bg-middle-gray hover:bg-dark-gray text-white px-6 py-3 rounded-lg font-bold transition-colors"
+                      className="bg-middle-gray hover:bg-dark-gray active:bg-gray-800 text-white px-6 py-4 rounded-lg font-bold transition-colors w-full sm:w-auto min-h-[56px] text-base sm:text-lg touch-manipulation"
                     >
                       ⏹️ Stop Speaking
                     </button>
                   </div>
                 )}
 
-                <div className="flex justify-center space-x-4">
+                <div className="flex flex-col sm:flex-row justify-center space-y-2 sm:space-y-0 sm:space-x-4">
                   <button
                     onClick={pauseConversation}
-                    className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded font-bold transition-colors"
+                    className="bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white px-4 py-3 rounded-lg font-bold transition-colors min-h-[48px] touch-manipulation text-sm sm:text-base"
                   >
                     ⏸️ Pause
                   </button>
                   <button
                     onClick={completeSession}
-                    className="btn-secondary px-4 py-2"
+                    className="btn-secondary px-4 py-3 min-h-[48px] touch-manipulation text-sm sm:text-base"
                   >
                     ✅ Complete Session
                   </button>
@@ -514,18 +623,18 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
             )}
 
             {conversationState === 'paused' && (
-              <div className="space-y-4">
-                <p className="text-amber-600 font-bold">Session Paused</p>
-                <div className="flex justify-center space-x-4">
+              <div className="space-y-3 sm:space-y-4">
+                <p className="text-amber-600 font-bold text-sm sm:text-base">Session Paused</p>
+                <div className="flex flex-col sm:flex-row justify-center space-y-2 sm:space-y-0 sm:space-x-4">
                   <button
                     onClick={resumeConversation}
-                    className="btn-secondary px-6 py-3"
+                    className="btn-secondary px-6 py-3 min-h-[48px] touch-manipulation text-sm sm:text-base"
                   >
                     ▶️ Resume
                   </button>
                   <button
                     onClick={onReset}
-                    className="bg-middle-gray hover:bg-dark-gray text-white px-6 py-3 rounded-lg font-bold transition-colors"
+                    className="bg-middle-gray hover:bg-dark-gray active:bg-gray-800 text-white px-6 py-3 rounded-lg font-bold transition-colors min-h-[48px] touch-manipulation text-sm sm:text-base"
                   >
                     🔄 Restart
                   </button>
@@ -535,48 +644,124 @@ export default function VoiceConversationInterface({ scenario, onComplete, onRes
           </div>
         </div>
 
-        {/* Real-Time Feedback Panel */}
-        <div className="space-y-6">
-          
-          {/* Current Step */}
-          <div className="bg-class-pale-purple rounded-lg p-4">
-            <h3 className="font-bold text-class-purple mb-2">Current Step</h3>
-            <div className="text-sm text-midnight-blue">
-              <strong>{steps[currentStep]?.title}</strong>
-              <p className="mt-1">{steps[currentStep]?.description}</p>
-            </div>
-          </div>
-
-          {/* Real-Time Feedback */}
-          <div className="bg-green-50 rounded-lg p-4 border-2 border-green-200">
-            <h3 className="font-bold text-green-900 mb-2">Live Coaching</h3>
-            {realTimeFeedback.length === 0 ? (
-              <p className="text-sm text-green-700">Coaching tips will appear here during the conversation</p>
-            ) : (
-              <div className="space-y-2">
-                {realTimeFeedback.slice(-3).map((feedback, index) => (
-                  <div key={index} className="text-sm bg-green-100 p-2 rounded border-l-4 border-green-500 font-medium">
-                    {feedback}
-                  </div>
-                ))}
+          {/* Sidebar */}
+          <div className="space-y-4 lg:space-y-6 order-1 lg:order-2">
+            
+            {/* Enhanced Real-Time Feedback */}
+            <RealTimeFeedbackPanel
+              feedbackItems={feedbackManager.feedbackItems}
+              isActive={conversationState === 'active'}
+              onFeedbackDismiss={feedbackManager.removeFeedback}
+              maxVisibleItems={4}
+            />
+            
+            {/* Current Step */}
+            <div className="bg-white rounded-lg shadow-lg border-2 border-class-light-purple p-3 sm:p-4">
+              <div className="flex items-center space-x-2 mb-3">
+                <span className="text-lg sm:text-xl">📍</span>
+                <h3 className="font-bold text-class-purple text-sm sm:text-base">Current Step</h3>
               </div>
-            )}
-          </div>
+              <div className="space-y-3">
+                <div className={`p-3 rounded-lg border-2 ${
+                  steps[currentStep]?.completed 
+                    ? 'bg-green-50 border-green-200'
+                    : 'bg-class-pale-purple border-class-light-purple'
+                }`}>
+                  <div className="flex items-center space-x-2 mb-2">
+                    <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                      steps[currentStep]?.completed
+                        ? 'bg-green-500 text-white'
+                        : 'bg-class-purple text-white'
+                    }`}>
+                      {steps[currentStep]?.completed ? '✓' : steps[currentStep]?.step}
+                    </div>
+                    <strong className="text-xs sm:text-sm text-midnight-blue">{steps[currentStep]?.title}</strong>
+                  </div>
+                  <p className="text-xs text-dark-gray leading-relaxed">{steps[currentStep]?.description}</p>
+                </div>
+              </div>
+            </div>
 
-          {/* Scenario Objectives */}
-          <div className="bg-light-gray rounded-lg p-4">
-            <h3 className="font-bold text-midnight-blue mb-2">Session Objectives</h3>
-            <ul className="text-sm text-dark-gray space-y-1">
-              {scenario.objectives.map((objective, index) => (
-                <li key={index} className="flex items-start space-x-2">
-                  <span className="w-2 h-2 bg-class-purple rounded-full mt-2 flex-shrink-0"></span>
-                  <span>{objective}</span>
-                </li>
-              ))}
-            </ul>
+            {/* Scenario Objectives */}
+            <div className="bg-white rounded-lg shadow-lg border-2 border-class-light-purple p-3 sm:p-4">
+              <div className="flex items-center space-x-2 mb-3">
+                <span className="text-lg sm:text-xl">🎯</span>
+                <h3 className="font-bold text-class-purple text-sm sm:text-base">Session Objectives</h3>
+              </div>
+              <ul className="space-y-2">
+                {scenario.objectives.map((objective, index) => (
+                  <li key={index} className="flex items-start space-x-2 sm:space-x-3 text-xs sm:text-sm">
+                    <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-class-purple rounded-full mt-1.5 sm:mt-2 flex-shrink-0"></div>
+                    <span className="text-dark-gray leading-relaxed">{objective}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+// CSS-in-JS for custom animations
+const customStyles = `
+  @keyframes fadeIn {
+    from { 
+      opacity: 0; 
+      transform: translateY(10px); 
+    }
+    to { 
+      opacity: 1; 
+      transform: translateY(0); 
+    }
+  }
+  
+  @keyframes scaleIn {
+    from { 
+      opacity: 0; 
+      transform: scale(0.9); 
+    }
+    to { 
+      opacity: 1; 
+      transform: scale(1); 
+    }
+  }
+  
+  .animate-fadeIn {
+    animation: fadeIn 0.3s ease-out forwards;
+  }
+  
+  .animate-scaleIn {
+    animation: scaleIn 0.3s ease-out forwards;
+  }
+  
+  .hover\\:scale-102:hover {
+    transform: scale(1.02);
+  }
+  
+  .transform-gpu {
+    transform: translateZ(0);
+  }
+  
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .touch-manipulation {
+    touch-action: manipulation;
+  }
+`;
+
+// Inject styles only in browser environment
+if (typeof document !== 'undefined' && !document.querySelector('#voice-interface-styles')) {
+  const styleSheet = document.createElement('style');
+  styleSheet.id = 'voice-interface-styles';
+  styleSheet.textContent = customStyles;
+  document.head.appendChild(styleSheet);
 }

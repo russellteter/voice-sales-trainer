@@ -42,10 +42,18 @@ export default function ElevenLabsVoiceInterface({
 }: ElevenLabsVoiceProps) {
   const [isConnected, setIsConnected] = useState(false);
   const [conversationId, setConversationId] = useState<string>('');
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const [lastPingTime, setLastPingTime] = useState<number>(0);
+  const [latency, setLatency] = useState<number | undefined>(undefined);
+  const [audioQuality, setAudioQuality] = useState<'excellent' | 'good' | 'fair' | 'poor' | 'unknown'>('unknown');
   const websocketRef = useRef<WebSocket | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const processorRef = useRef<AudioWorkletNode | null>(null);
+  const audioWorkletLoaded = useRef<boolean>(false);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const maxReconnectAttempts = 5;
+  const baseReconnectDelay = 1000; // 1 second base delay
 
   // Initialize WebSocket connection to ElevenLabs
   const initializeWebSocket = useCallback(() => {
@@ -56,11 +64,16 @@ export default function ElevenLabsVoiceInterface({
 
     try {
       const wsUrl = `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${voiceId}`;
-      const ws = new WebSocket(wsUrl);
+      const ws = new WebSocket(wsUrl, [], {
+        headers: {
+          'xi-api-key': apiKey
+        }
+      });
 
       ws.onopen = () => {
         console.log('✅ ElevenLabs WebSocket connected');
         setIsConnected(true);
+        setReconnectAttempts(0); // Reset reconnection attempts on successful connection
 
         // Send initialization message with multi-voice agent configuration
         const initMessage = {
@@ -181,39 +194,43 @@ No external tools are required for this training scenario. All interactions occu
 
 ## Voice Configuration Instructions
 
-You have access to two configured voices that you switch between using XML markup:
+You have access to two configured voices that you switch between using ElevenLabs voice switching commands:
 
 **Available Voices:**
-- coach_marcus - Use for all coaching, feedback, and instructional content
-- tim - Use for all prospect roleplay responses
+- coach_marcus - Professional sales trainer voice (direct, analytical)
+- tim - Business prospect voice (busy, realistic)
 
-**Voice Switching Format:**
-When speaking as Coach Marcus: Use coach_marcus voice for all coaching, feedback, and instructional content
+**Voice Switching Commands:**
+To switch to Coach Marcus: <voice name="coach_marcus">
+To switch to Tim: <voice name="tim">
 
-When speaking as Tim: Use tim voice for all prospect roleplay responses
+**Voice Usage Rules:**
+1. ALWAYS start with Coach Marcus introducing the scenario
+2. Use Coach Marcus for all training feedback and instructions
+3. Use Tim for all prospect roleplay responses
+4. Switch voices immediately when changing personas
+5. Keep voice transitions clean - no overlapping personas
 
-When Coach interrupts during roleplay: Switch to coach_marcus voice for feedback, then back to tim voice for continued roleplay
+**Example Full Interaction with Proper Voice Switching:**
+<voice name="coach_marcus">Marcus here. You're calling Tim Harrison, VP of Operations at TechCorp. Your goal: book a fifteen-minute discovery call. I'll interrupt if necessary. Line's ringing.</voice>
 
-**Voice Transition Rules:**
-- Always use appropriate voice for each persona
-- Keep transitions brief: "Marcus." or "Tim speaking."
-- Default to coach_marcus voice for session opening
-- Switch voices based on content context
-
-**Example Full Interaction:**
-[Coach Marcus voice] Marcus. You're calling Tim Harrison, VP at TechCorp. Goal: book fifteen minutes. Line's ringing.
-[Tim voice] Hello?
-[User speaks]
-[Tim voice] Sorry, who is this? I'm in the middle of something.
-[User speaks]
-[Coach Marcus voice] Better.
-[Tim voice] Okay, you've got 30 seconds. What's this about?
+<voice name="tim">Hello?</voice>
+[User speaks their opening]
+<voice name="tim">Sorry, who is this? I'm in the middle of something.</voice>
+[User adjusts approach]
+<voice name="coach_marcus">Better technique.</voice>
+<voice name="tim">Okay, you've got thirty seconds. What's this about?</voice>
 [User handles objection]
-[Tim voice] Actually, we are looking at solutions for that. When could we talk?
+<voice name="tim">Actually, we are looking at solutions for that. When could we talk?</voice>
 [Call ends]
-[Coach Marcus voice] Three points. Opening was weak - state your value faster. Objection handling worked. You booked the meeting. Again with stronger opening.
+<voice name="coach_marcus">Three points. Opening was weak - state your value faster. Objection handling worked. You booked the meeting. Try again with a stronger opening.</voice>
 
-Begin every session with Coach Marcus introducing the scenario.`
+**Critical Requirements:**
+- Begin every session with: <voice name="coach_marcus">
+- End voice commands properly with </voice>
+- Never speak as both personas simultaneously
+- Switch voices based on content context, not time
+- Use Coach Marcus for session control and Tim for prospect responses`
                 }
               }
             }
@@ -243,9 +260,24 @@ Begin every session with Coach Marcus introducing the scenario.`
         console.log('ElevenLabs WebSocket closed:', event.code, event.reason);
         setIsConnected(false);
         
-        // Attempt to reconnect if unexpected close
-        if (isActive && event.code !== 1000) {
-          setTimeout(initializeWebSocket, 3000);
+        // Clear any existing reconnect timeout
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = null;
+        }
+        
+        // Attempt to reconnect with exponential backoff if unexpected close
+        if (isActive && event.code !== 1000 && reconnectAttempts < maxReconnectAttempts) {
+          const delay = Math.min(baseReconnectDelay * Math.pow(2, reconnectAttempts), 30000); // Max 30 seconds
+          console.log(`⚠️ Reconnecting in ${delay}ms (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
+          
+          reconnectTimeoutRef.current = setTimeout(() => {
+            setReconnectAttempts(prev => prev + 1);
+            initializeWebSocket();
+          }, delay);
+        } else if (reconnectAttempts >= maxReconnectAttempts) {
+          console.error('❌ Max reconnection attempts reached');
+          onError('Connection failed after multiple attempts. Please refresh the page.');
         }
       };
 
@@ -299,8 +331,29 @@ Begin every session with Coach Marcus introducing the scenario.`
         break;
 
       case 'ping':
-        // Respond to ping to keep connection alive
+        // Respond to ping to keep connection alive and measure latency
+        const pingTime = Date.now();
+        setLastPingTime(pingTime);
         websocketRef.current?.send(JSON.stringify({ type: 'pong' }));
+        break;
+        
+      case 'pong':
+        // Calculate latency from ping/pong
+        if (lastPingTime > 0) {
+          const currentLatency = Date.now() - lastPingTime;
+          setLatency(currentLatency);
+          
+          // Update audio quality based on latency
+          if (currentLatency < 100) {
+            setAudioQuality('excellent');
+          } else if (currentLatency < 200) {
+            setAudioQuality('good');
+          } else if (currentLatency < 500) {
+            setAudioQuality('fair');
+          } else {
+            setAudioQuality('poor');
+          }
+        }
         break;
 
       default:
@@ -327,23 +380,77 @@ Begin every session with Coach Marcus introducing the scenario.`
       audioContextRef.current = new AudioContext({ sampleRate: 16000 });
       const source = audioContextRef.current.createMediaStreamSource(stream);
 
-      // Create script processor for audio data
-      processorRef.current = audioContextRef.current.createScriptProcessor(4096, 1, 1);
-      
-      processorRef.current.onaudioprocess = (event) => {
-        if (!isConnected || !websocketRef.current) return;
-
-        const inputBuffer = event.inputBuffer.getChannelData(0);
-        
-        // Convert float32 to int16 PCM
-        const pcmBuffer = new Int16Array(inputBuffer.length);
-        for (let i = 0; i < inputBuffer.length; i++) {
-          pcmBuffer[i] = Math.max(-32768, Math.min(32767, inputBuffer[i] * 32768));
+      // Use modern AudioWorkletNode for better performance
+      if (!audioWorkletLoaded.current) {
+        try {
+          await audioContextRef.current.audioWorklet.addModule(
+            'data:application/javascript,' + encodeURIComponent(`
+              class AudioProcessor extends AudioWorkletProcessor {
+                constructor() {
+                  super();
+                  this.bufferSize = 4096;
+                  this.buffer = new Float32Array(this.bufferSize);
+                  this.bufferIndex = 0;
+                }
+                
+                process(inputs, outputs, parameters) {
+                  const input = inputs[0];
+                  if (input.length > 0) {
+                    const inputData = input[0];
+                    
+                    for (let i = 0; i < inputData.length; i++) {
+                      this.buffer[this.bufferIndex] = inputData[i];
+                      this.bufferIndex++;
+                      
+                      if (this.bufferIndex >= this.bufferSize) {
+                        // Convert to PCM and send
+                        const pcmBuffer = new Int16Array(this.bufferSize);
+                        for (let j = 0; j < this.bufferSize; j++) {
+                          pcmBuffer[j] = Math.max(-32768, Math.min(32767, this.buffer[j] * 32768));
+                        }
+                        
+                        this.port.postMessage(pcmBuffer.buffer);
+                        this.bufferIndex = 0;
+                      }
+                    }
+                  }
+                  return true;
+                }
+              }
+              
+              registerProcessor('audio-processor', AudioProcessor);
+            `)
+          );
+          audioWorkletLoaded.current = true;
+        } catch (error) {
+          console.warn('AudioWorklet not supported, falling back to ScriptProcessor:', error);
+          // Fallback to ScriptProcessor for older browsers
+          const processor = audioContextRef.current.createScriptProcessor(4096, 1, 1);
+          processor.onaudioprocess = (event) => {
+            if (!isConnected || !websocketRef.current) return;
+            const inputBuffer = event.inputBuffer.getChannelData(0);
+            const pcmBuffer = new Int16Array(inputBuffer.length);
+            for (let i = 0; i < inputBuffer.length; i++) {
+              pcmBuffer[i] = Math.max(-32768, Math.min(32767, inputBuffer[i] * 32768));
+            }
+            const base64Audio = arrayBufferToBase64(pcmBuffer.buffer);
+            websocketRef.current.send(JSON.stringify({
+              type: 'audio',
+              audio_event: { audio_base_64: base64Audio }
+            }));
+          };
+          source.connect(processor);
+          processor.connect(audioContextRef.current.destination);
+          return;
         }
-
-        // Convert to base64 and send
-        const base64Audio = arrayBufferToBase64(pcmBuffer.buffer);
+      }
+      
+      processorRef.current = new AudioWorkletNode(audioContextRef.current, 'audio-processor');
+      
+      processorRef.current.port.onmessage = (event) => {
+        if (!isConnected || !websocketRef.current) return;
         
+        const base64Audio = arrayBufferToBase64(event.data);
         websocketRef.current.send(JSON.stringify({
           type: 'audio',
           audio_event: {
@@ -351,7 +458,7 @@ Begin every session with Coach Marcus introducing the scenario.`
           }
         }));
       };
-
+      
       source.connect(processorRef.current);
       processorRef.current.connect(audioContextRef.current.destination);
 
@@ -363,21 +470,56 @@ Begin every session with Coach Marcus introducing the scenario.`
     }
   }, [isConnected, onError]);
 
-  // Play received audio data
+  // Play received audio data with improved error handling
   const playAudioData = async (audioData: ArrayBuffer) => {
     try {
       if (!audioContextRef.current) {
-        audioContextRef.current = new AudioContext();
+        audioContextRef.current = new AudioContext({ sampleRate: 48000 });
+      }
+      
+      // Resume context if suspended (required by browser autoplay policies)
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+        console.log('AudioContext resumed for playback');
+      }
+      
+      // Validate audio data
+      if (!audioData || audioData.byteLength === 0) {
+        console.warn('Empty audio data received, skipping playback');
+        return;
       }
 
       const audioBuffer = await audioContextRef.current.decodeAudioData(audioData.slice(0));
+      
+      // Check if audio buffer is valid
+      if (!audioBuffer || audioBuffer.length === 0) {
+        console.warn('Invalid audio buffer, skipping playback');
+        return;
+      }
+      
       const source = audioContextRef.current.createBufferSource();
       source.buffer = audioBuffer;
-      source.connect(audioContextRef.current.destination);
+      
+      // Add gain node for volume control
+      const gainNode = audioContextRef.current.createGain();
+      gainNode.gain.value = 0.8; // Slightly reduce volume to prevent clipping
+      
+      source.connect(gainNode);
+      gainNode.connect(audioContextRef.current.destination);
+      
+      source.onerror = (error) => {
+        console.error('Audio source error:', error);
+      };
+      
       source.start();
       
     } catch (error) {
       console.error('Error playing audio:', error);
+      // Try to recover by creating a new audio context
+      if (audioContextRef.current?.state === 'closed') {
+        audioContextRef.current = new AudioContext({ sampleRate: 48000 });
+        console.log('Audio context recreated after error');
+      }
     }
   };
 
@@ -438,6 +580,15 @@ Begin every session with Coach Marcus introducing the scenario.`
 
     setIsConnected(false);
     setConversationId('');
+    setReconnectAttempts(0);
+    setLatency(undefined);
+    setAudioQuality('unknown');
+    
+    // Clear any pending reconnect timeouts
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
   }, []);
 
   // Initialize when component becomes active
@@ -460,10 +611,44 @@ Begin every session with Coach Marcus introducing the scenario.`
 
   return (
     <div className="flex items-center space-x-4">
-      <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-      <span className="text-sm text-gray-600">
-        {isConnected ? `Connected (${conversationId})` : 'Connecting to ElevenLabs...'}
-      </span>
+      <div className={`w-3 h-3 rounded-full ${
+        isConnected ? 'bg-green-500' : 
+        reconnectAttempts > 0 ? 'bg-yellow-500 animate-pulse' : 
+        'bg-red-500'
+      }`}></div>
+      <div className="flex flex-col">
+        <span className="text-sm text-gray-600">
+          {isConnected 
+            ? `Connected (${conversationId.slice(-8) || 'N/A'})` 
+            : reconnectAttempts > 0 
+              ? `Reconnecting (${reconnectAttempts}/${maxReconnectAttempts})...` 
+              : 'Connecting to ElevenLabs...'
+          }
+        </span>
+        {(latency !== undefined || audioQuality !== 'unknown') && (
+          <div className="flex items-center space-x-2 text-xs text-gray-500">
+            {latency !== undefined && (
+              <span className={`font-mono ${
+                latency < 100 ? 'text-green-600' :
+                latency < 200 ? 'text-yellow-600' :
+                'text-red-600'
+              }`}>
+                {latency}ms
+              </span>
+            )}
+            {audioQuality !== 'unknown' && (
+              <span className={`capitalize ${
+                audioQuality === 'excellent' ? 'text-green-600' :
+                audioQuality === 'good' ? 'text-blue-600' :
+                audioQuality === 'fair' ? 'text-yellow-600' :
+                'text-red-600'
+              }`}>
+                {audioQuality}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
