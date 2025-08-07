@@ -4,13 +4,15 @@ import { useState, useEffect } from 'react';
 import { useAuth, LoginForm } from '@/components/AuthProvider';
 import ScenarioDashboard, { TrainingScenario } from '@/components/ScenarioDashboard';
 import VoiceConversationInterface from '@/components/VoiceConversationInterface';
+import VoiceConversationInterfaceReal from '@/components/VoiceConversationInterfaceReal';
 import SessionFeedback from '@/components/SessionFeedback';
 import SessionPlayback from '@/components/SessionPlayback';
 import AnalyticsDashboard from '@/components/AnalyticsDashboard';
 import AdminDashboard from '@/components/AdminDashboard';
+import ElevenLabsTest from '@/components/ElevenLabsTest';
 import { UserProfile } from '@/components/AuthProvider';
 
-type AppScreen = 'dashboard' | 'conversation' | 'feedback' | 'analytics' | 'admin' | 'profile' | 'playback';
+type AppScreen = 'dashboard' | 'conversation' | 'feedback' | 'analytics' | 'admin' | 'profile' | 'playback' | 'test';
 
 interface SessionRecording {
   id: string;
@@ -144,6 +146,16 @@ export default function VoiceSalesTrainerApp() {
             >
               📊 Analytics
             </button>
+            <button
+              onClick={() => setCurrentScreen('test')}
+              className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                currentScreen === 'test' 
+                  ? 'text-class-purple bg-class-pale-purple' 
+                  : 'text-dark-gray hover:text-class-purple'
+              }`}
+            >
+              🧪 Voice Test
+            </button>
             {(user.permissions?.includes('system_admin') || user.permissions?.includes('manage_content')) ? (
               <button
                 onClick={() => setCurrentScreen('admin')}
@@ -234,11 +246,26 @@ export default function VoiceSalesTrainerApp() {
 
         {/* Voice Conversation Interface */}
         {currentScreen === 'conversation' && selectedScenario && (
-          <VoiceConversationInterface
+          <VoiceConversationInterfaceReal
             scenario={selectedScenario}
             onComplete={handleSessionComplete}
             onReset={handleResetToScenarios}
           />
+        )}
+
+        {/* ElevenLabs Test Interface */}
+        {currentScreen === 'test' && (
+          <div>
+            <div className="mb-8">
+              <h1 className="text-3xl font-black text-class-purple mb-2">
+                Voice Integration Testing
+              </h1>
+              <p className="text-midnight-blue">
+                Test your ElevenLabs API integration and troubleshoot voice issues
+              </p>
+            </div>
+            <ElevenLabsTest />
+          </div>
         )}
 
         {/* Session Feedback */}
