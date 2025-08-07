@@ -1,0 +1,88 @@
+name: voice-sales-trainer
+region: nyc1
+
+services:
+  # Frontend Service
+  - name: frontend
+    source_dir: /
+    github:
+      repo: your-username/voice-sales-trainer
+      branch: main
+      deploy_on_push: true
+    build_command: npm ci && npm run build
+    run_command: npm start
+    environment_slug: node-js
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    http_port: 3000
+    health_check:
+      http_path: /api/health
+    routes:
+      - path: /
+    envs:
+      - key: NODE_ENV
+        value: "production"
+      - key: NEXT_PUBLIC_API_URL
+        value: "${APP_URL}/api"
+      - key: NEXT_PUBLIC_ENVIRONMENT
+        value: "production"
+
+  # Backend Service
+  - name: backend
+    source_dir: /backend
+    github:
+      repo: your-username/voice-sales-trainer
+      branch: main
+      deploy_on_push: true
+    build_command: pip install -r requirements.txt
+    run_command: alembic upgrade head && gunicorn main:app --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 2 --timeout 60
+    environment_slug: python
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    http_port: 8000
+    health_check:
+      http_path: /health
+    routes:
+      - path: /api
+      - path: /ws
+    envs:
+      - key: ENVIRONMENT
+        value: "production"
+      - key: DEBUG
+        value: "false"
+      - key: LOG_LEVEL
+        value: "INFO"
+      - key: DATABASE_URL
+        value: "${db.DATABASE_URL}"
+      - key: REDIS_URL
+        value: "${redis.DATABASE_URL}"
+      - key: JWT_SECRET_KEY
+        value: "your-jwt-secret-key-here"  # Set this to a secure value
+      - key: FRONTEND_URL
+        value: "${APP_URL}"
+      - key: CORS_ALLOWED_ORIGINS
+        value: "${APP_URL}"
+      - key: ELEVENLABS_API_KEY
+        value: "your-elevenlabs-key-here"  # Set this to your actual key
+      - key: CLAUDE_API_KEY
+        value: "your-claude-key-here"      # Set this to your actual key
+      - key: MAX_CONCURRENT_SESSIONS
+        value: "100"
+      - key: WORKER_PROCESSES
+        value: "2"
+
+databases:
+  # PostgreSQL Database
+  - name: db
+    engine: PG
+    version: "15"
+    size: basic-xs
+    num_nodes: 1
+    db_name: voice_sales_trainer
+    db_user: voice_trainer
+
+  # Redis Cache
+  - name: redis
+    engine: REDIS
+    version: "7"
+    size: basic-xs

@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+.scenario-card {
+  @apply p-6 border rounded-lg shadow-md hover:shadow-lg transition-shadow cursor-pointer;
+}
+
+.scenario-card.selected {
+  @apply border-blue-500 bg-blue-50;
+}
+
+.btn {
+  @apply px-4 py-2 rounded-md font-semibold text-white transition-colors;
+}
+
+.btn-primary {
+  @apply bg-blue-500 hover:bg-blue-600;
+}
+
+.btn-secondary {
+  @apply bg-gray-500 hover:bg-gray-600;
+}
+
+.btn-danger {
+  @apply bg-red-500 hover:bg-red-600;
+}
+
+.btn-disabled {
+  @apply bg-gray-300 cursor-not-allowed;
+}
+
+.feedback-item {
+  @apply p-4 mb-2 rounded-lg;
+}
+
+.feedback-positive {
+  @apply bg-green-100 text-green-800;
+}
+
+.feedback-negative {
+  @apply bg-red-100 text-red-800;
+}
+
+.feedback-neutral {
+  @apply bg-gray-100 text-gray-800;
+}

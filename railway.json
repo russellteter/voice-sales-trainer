@@ -1,0 +1,21 @@
+{
+  "build": {
+    "builder": "dockerfile",
+    "dockerfilePath": "frontend.Dockerfile"
+  },
+  "deploy": {
+    "healthcheckPath": "/api/health",
+    "healthcheckTimeout": 300,
+    "restartPolicyType": "on-failure",
+    "restartPolicyMaxRetries": 10
+  },
+  "environments": {
+    "production": {
+      "variables": {
+        "NODE_ENV": "production",
+        "ENVIRONMENT": "production",
+        "DEBUG": "false"
+      }
+    }
+  }
+}

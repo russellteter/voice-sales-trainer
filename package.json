@@ -1,0 +1,51 @@
+{
+  "name": "voice-sales-trainer",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "backend:dev": "cd backend && python run.py",
+    "backend:install": "cd backend && pip install -r requirements.txt",
+    "backend:migrate": "cd backend && python migrations/create_initial_tables.py",
+    "backend:test": "cd backend && python -m pytest tests/",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:build": "docker-compose build",
+    "docker:logs": "docker-compose logs -f",
+    "docker:logs:backend": "docker-compose logs -f backend",
+    "docker:logs:frontend": "docker-compose logs -f frontend",
+    "docker:clean": "docker-compose down -v --rmi all",
+    "setup": "npm install && npm run backend:install && cp .env.example .env",
+    "setup:docker": "docker-compose up -d postgres redis && sleep 10 && npm run backend:migrate",
+    "full-stack:dev": "concurrently \"npm run backend:dev\" \"npm run dev\"",
+    "integration:test": "cd backend && python integration_test.py",
+    "db:reset": "docker-compose down postgres && docker volume rm voice-sales-trainer_postgres_data && docker-compose up -d postgres",
+    "health:check": "curl -f http://localhost:8000/health && curl -f http://localhost:3000"
+  },
+  "dependencies": {
+    "next": "15.4.6",
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4.1.11",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^8.2.2",
+    "eslint": "^9",
+    "eslint-config-next": "15.4.6",
+    "postcss": "^8.5.6",
+    "prettier": "^3.1.0",
+    "tailwindcss": "^4.1.11",
+    "typescript": "^5"
+  }
+}
